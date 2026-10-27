@@ -1,124 +1,216 @@
-const mongoose = require('mongoose');
 const Application = require('../models/Application');
 const Project = require('../models/Project');
 
-// @desc    Apply to a project (student only)
+// @desc    Apply to a project/gig
 // @route   POST /api/projects/:id/applications
-const applyToProject = async (req, res) => {
+// @access  Private (Student only)
+const createApplication = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'Invalid project ID.' });
-    }
+    const projectId = req.params.id;
+    const { interestNote } = req.body;
 
-    const project = await Project.findById(req.params.id);
+    const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ message: 'Project not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
     }
 
     if (project.status !== 'open') {
-      return res.status(400).json({ message: 'This project is no longer accepting applications.' });
+      return res.status(400).json({
+        success: false,
+        message: `Cannot apply to this project because it is currently ${project.status}`
+      });
     }
 
-    const { interestNote } = req.body;
-
-    const application = await Application.create({
-      project: project._id,
-      applicant: req.user._id,
-      interestNote: interestNote || '',
+    // Check if the student has already applied
+    const existingApp = await Application.findOne({
+      project: projectId,
+      applicant: req.user._id
     });
 
-    res.status(201).json(application);
-  } catch (error) {
-    // Handle duplicate application (unique index violation)
-    if (error.code === 11000) {
-      return res.status(409).json({ message: 'You have already applied to this project.' });
+    if (existingApp) {
+      return res.status(409).json({
+        success: false,
+        message: 'You have already applied for this gig'
+      });
     }
-    console.error('Apply error:', error.message);
-    res.status(500).json({ message: 'Server error applying to project.' });
+
+    const application = await Application.create({
+      project: projectId,
+      applicant: req.user._id,
+      interestNote: interestNote || '',
+      status: 'pending'
+    });
+
+    const populatedApp = await Application.findById(application._id)
+      .populate('applicant', 'name email skills reliabilityScore completedProjects');
+
+    res.status(201).json({
+      success: true,
+      application: populatedApp
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'You have already applied for this gig'
+      });
+    }
+    console.error('Create application error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error creating application'
+    });
   }
 };
 
-// @desc    Get applications for a project (owning organizer only)
+// @desc    Get all applications for a project
 // @route   GET /api/projects/:id/applications
-const getApplications = async (req, res) => {
+// @access  Private (Club organizer only)
+const getProjectApplications = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'Invalid project ID.' });
-    }
+    const projectId = req.params.id;
 
-    const project = await Project.findById(req.params.id);
+    const project = await Project.findById(projectId);
     if (!project) {
-      return res.status(404).json({ message: 'Project not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found'
+      });
     }
 
-    // Ownership check
+    // Authorization: Only the organizer of the project can view applicants
     if (String(project.organizer) !== String(req.user._id)) {
-      return res.status(403).json({ message: 'Not authorized. Only the project organizer can view applications.' });
+      return res.status(403).json({
+        success: false,
+        message: 'Only the club organizer who posted this project can access its applications'
+      });
     }
 
-    const applications = await Application.find({ project: project._id })
-      .populate('applicant', 'name email skills reliabilityScore')
+    const applications = await Application.find({ project: projectId })
+      .populate('applicant', 'name email skills reliabilityScore completedProjects bio')
       .sort({ createdAt: -1 });
 
-    res.json(applications);
+    res.status(200).json({
+      success: true,
+      count: applications.length,
+      applications
+    });
   } catch (error) {
-    console.error('Get applications error:', error.message);
-    res.status(500).json({ message: 'Server error fetching applications.' });
+    console.error('Get project applications error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error fetching applications'
+    });
   }
 };
 
-// @desc    Update application status (owning organizer)
+// @desc    Update application status (accept, reject, waitlist)
 // @route   PATCH /api/applications/:id/status
+// @access  Private (Club organizer only)
 const updateApplicationStatus = async (req, res) => {
   try {
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'Invalid application ID.' });
-    }
+    const { status, waitlistRank } = req.body;
+    const allowedStatuses = ['accepted', 'rejected', 'waitlisted'];
 
-    const { status } = req.body;
-
-    if (!['accepted', 'rejected', 'waitlisted'].includes(status)) {
-      return res.status(400).json({ message: 'Status must be accepted, rejected, or waitlisted.' });
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Status must be one of: ${allowedStatuses.join(', ')}`
+      });
     }
 
     const application = await Application.findById(req.params.id);
     if (!application) {
-      return res.status(404).json({ message: 'Application not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Application not found'
+      });
     }
 
     const project = await Project.findById(application.project);
     if (!project) {
-      return res.status(404).json({ message: 'Project not found.' });
+      return res.status(404).json({
+        success: false,
+        message: 'Associated project not found'
+      });
     }
 
-    // Ownership check
+    // Verify organizer owns the project
     if (String(project.organizer) !== String(req.user._id)) {
-      return res.status(403).json({ message: 'Not authorized. Only the project organizer can manage applications.' });
+      return res.status(403).json({
+        success: false,
+        message: 'Only the project organizer can update application status'
+      });
     }
 
-    // If accepting, ensure no one is already accepted
+    // Handle acceptance
     if (status === 'accepted') {
-      if (project.selectedStudent) {
-        return res.status(400).json({ message: 'A student has already been accepted for this project.' });
-      }
-
-      // Set the project's selectedStudent and status
+      application.status = 'accepted';
       project.selectedStudent = application.applicant;
       project.status = 'in-progress';
       await project.save();
+    } else if (status === 'waitlisted') {
+      application.status = 'waitlisted';
+      if (waitlistRank !== undefined) {
+        application.waitlistRank = waitlistRank;
+      }
+    } else {
+      application.status = status;
     }
 
-    application.status = status;
-    if (status === 'waitlisted' && req.body.waitlistRank) {
-      application.waitlistRank = req.body.waitlistRank;
-    }
     await application.save();
 
-    res.json(application);
+    const populatedApp = await Application.findById(application._id)
+      .populate('applicant', 'name email skills reliabilityScore completedProjects bio');
+
+    res.status(200).json({
+      success: true,
+      message: `Application status updated to ${status}`,
+      application: populatedApp,
+      project
+    });
   } catch (error) {
-    console.error('Update application status error:', error.message);
-    res.status(500).json({ message: 'Server error updating application status.' });
+    console.error('Update application status error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error updating application status'
+    });
   }
 };
 
-module.exports = { applyToProject, getApplications, updateApplicationStatus };
+// @desc    Get student's own applications
+// @route   GET /api/applications/my
+// @access  Private (Student)
+const getMyApplications = async (req, res) => {
+  try {
+    const applications = await Application.find({ applicant: req.user._id })
+      .populate({
+        path: 'project',
+        select: 'title category status organizer selectedStudent',
+        populate: { path: 'organizer', select: 'name email' }
+      })
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: applications.length,
+      applications
+    });
+  } catch (error) {
+    console.error('Get my applications error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error fetching your applications'
+    });
+  }
+};
+
+module.exports = {
+  createApplication,
+  getProjectApplications,
+  updateApplicationStatus,
+  getMyApplications
+};
