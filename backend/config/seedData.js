@@ -1,18 +1,14 @@
 const User = require('../models/User');
-const bcrypt = require('bcryptjs');
 
 const seedDemoAccounts = async () => {
   try {
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash('password123', salt);
-
     // 1. Seed Demo Club
     const existingClub = await User.findOne({ email: 'club@college.edu' });
     if (!existingClub) {
       await User.create({
         name: 'Technical & Cultural Council',
         email: 'club@college.edu',
-        password: hashedPassword,
+        password: 'password123',
         role: 'club',
         bio: 'Official college committee organizing annual tech and cultural symposiums.',
         verified: true
@@ -26,7 +22,7 @@ const seedDemoAccounts = async () => {
       await User.create({
         name: 'Alex Rivera',
         email: 'student@college.edu',
-        password: hashedPassword,
+        password: 'password123',
         role: 'student',
         bio: 'Computer Science student skilled in fullstack development and responsive design.',
         skills: [

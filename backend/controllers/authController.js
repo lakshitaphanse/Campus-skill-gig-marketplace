@@ -39,6 +39,7 @@ const register = async (req, res) => {
     const token = generateToken(user._id, user.role);
 
     res.status(201).json({
+      success: true,
       token,
       user: {
         _id: user._id,
@@ -82,6 +83,7 @@ const login = async (req, res) => {
     const token = generateToken(user._id, user.role);
 
     res.json({
+      success: true,
       token,
       user: {
         _id: user._id,
@@ -107,6 +109,7 @@ const login = async (req, res) => {
 const getMe = async (req, res) => {
   try {
     res.json({
+      success: true,
       user: {
         _id: req.user._id,
         name: req.user.name,
