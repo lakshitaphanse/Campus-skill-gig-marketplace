@@ -19,7 +19,10 @@ const createProject = async (req, res) => {
       organizer: req.user._id,
     });
 
-    res.status(201).json(project);
+    res.status(201).json({
+      success: true,
+      project
+    });
   } catch (error) {
     console.error('Create project error:', error.message);
     if (error.name === 'ValidationError') {
@@ -45,7 +48,10 @@ const getProjects = async (req, res) => {
       .populate('selectedStudent', 'name email')
       .sort({ createdAt: -1 });
 
-    res.json(projects);
+    res.json({
+      success: true,
+      projects
+    });
   } catch (error) {
     console.error('Get projects error:', error.message);
     res.status(500).json({ message: 'Server error fetching projects.' });
@@ -65,10 +71,13 @@ const getProjectById = async (req, res) => {
       .populate('selectedStudent', 'name email skills reliabilityScore');
 
     if (!project) {
-      return res.status(404).json({ message: 'Project not found.' });
+      return res.status(404).json({ success: false, message: 'Project not found.' });
     }
 
-    res.json(project);
+    res.json({
+      success: true,
+      project
+    });
   } catch (error) {
     console.error('Get project by ID error:', error.message);
     res.status(500).json({ message: 'Server error fetching project.' });
