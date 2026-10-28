@@ -8,20 +8,20 @@ const authRoutes = require('./routes/authRoutes');
 const projectRoutes = require('./routes/projectRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const milestoneRoutes = require('./routes/milestoneRoutes');
+const clubRoutes = require('./routes/clubRoutes');
 
 const app = express();
 
 // Connect to Database & auto-seed demo accounts
-connectDB().then(() => {
-  const seedDemoAccounts = require('./config/seedData');
-  seedDemoAccounts();
-});
+connectDB()
+  .then(() => {
+    const seedDemoAccounts = require('./config/seedData');
+    return seedDemoAccounts();
+  })
+  .catch((err) => console.error('[Startup] DB/seed error:', err));
 
 // Middleware
-app.use(cors({
-  origin: '*',
-  credentials: true
-}));
+app.use(cors({ origin: '*' }));   // see note 3 below
 app.use(express.json());
 
 // Mount API routes
@@ -29,6 +29,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/applications', applicationRoutes);
 app.use('/api/milestones', milestoneRoutes);
+app.use('/api/clubs', clubRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -46,8 +47,11 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
-  console.log(`[Server] Campus Skill & Gig Marketplace API running on port ${PORT}`);
-});
+// Only start a listener when running locally. Vercel runs the exported app itself.
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`[Server] Campus Skill & Gig Marketplace API running on port ${PORT}`);
+  });
+}
 
-module.exports = { app, server };
+module.exports = app;
